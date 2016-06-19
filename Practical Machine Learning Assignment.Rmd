@@ -1,0 +1,103 @@
+---
+title: "Practical Machine Learning Assignment"
+author: "Davayne Melbourne"
+date: "June 12, 2016"
+output: html_document
+---
+
+# Introduction
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+## Data
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+## Purpose
+The goal of the project is to use a predition algorithm and use data from accelerometers on the belt, forearm, arm, and dumbell to predict whetehr or not a particular activity was performed correctly. This is the "classe" variable in the training set. After developing a prediction model, the prediction will be applied to 20 test cases for evaluation.
+
+## Loading and Cleaning Data
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(knitr)
+```
+
+Loading
+```{r, echo= TRUE}
+trainingbase <- read.csv("pml-training.csv", na.strings=c("", "NA", "NULL","#DIV/0!"))
+testingbase <- read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL","#DIV/0!"))
+dim(trainingbase)
+dim(testingbase)
+```
+remove unnecessary or identification variables
+```{r, echo= TRUE}
+myvars <- names(trainingbase) %in% c("X", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp", "new_window", "num_window") 
+trainingred <- trainingbase[!myvars]
+dim(trainingred)
+```
+remove variables with mainly NA
+```{r, echo= TRUE}
+trainingred1 <- trainingred[ , colSums(is.na(trainingred)) == 0]
+dim(trainingred1)
+```
+remove variables with near zero variance
+```{r, echo= TRUE}
+nearzerovariance <- nearZeroVar(trainingred1, saveMetrics=TRUE)
+trainingred2 <- trainingred1[, nearzerovariance$nzv==FALSE]
+dim(trainingred2)
+```
+
+next we remove variables that are highly correlated with the independent variable
+```{r, echo= TRUE}
+corrMatrix <- cor(na.omit(trainingred2[sapply(trainingred2, is.numeric)]))
+highcorr <- findCorrelation(corrMatrix, cutoff = .90, verbose = TRUE)
+trainingred3 <- trainingred2[,-highcorr]
+dim(trainingred3)
+```
+
+Split the base training data into training and testing sets for cross validation.
+```{r, echo= TRUE}
+set.seed(1000)
+inTrain <- createDataPartition(y=trainingred3$classe, p=0.7, list=FALSE)
+training <- trainingred3[inTrain,]
+testing <- trainingred3[-inTrain,]
+dim(training); dim(testing)
+```
+
+## Prediction
+We fit a decision tree to the data then evaluate accuarcy.
+```{r, echo= TRUE}
+modFit1 <- train(classe ~ .,method="rpart",data=training)
+fancyRpartPlot(modFit1$finalModel)
+```
+## Cross Validation
+We check the performance of the tree on the testing set for cross validation.
+```{r, echo= TRUE}
+predictions1 <- predict(modFit1, testing, type = "raw")
+cmtr <- confusionMatrix(predictions1, testing$classe)
+cmtr
+```
+From Cross validation we see that the out of sample accuracy of tree is low so we will try other methods. 
+
+## Random Forest 
+Lets fit a random forest (using average of multiple trees) and evaluate well it performs.
+```{r, echo= TRUE}
+set.seed(1000)
+modFit2 = randomForest(classe~.,data=training)
+modFit2
+predictions2 <- predict(modFit2, testing, type = "class")
+cmrf <- confusionMatrix(predictions2, testing$classe)
+cmrf
+plot(modFit2)
+```
+Overall, the Random forest method has great out of sample accuracy of 99.4% and so we will use as our prediction algorithm. The plot indicates we needed only 50 tree repitititons to get good accuracy.
+
+## Conclusion
+```{r, echo= TRUE}
+finalanswers <- predict(modFit2, testingbase, type = "class")
+finalanswers
+```
